@@ -39,6 +39,12 @@ def init_db():
         );
         INSERT OR IGNORE INTO scan_state (id) VALUES (1);
     """)
+    # Migrate: add columns if they don't exist
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(marked_items)").fetchall()}
+    if "tvdb_id" not in existing:
+        conn.execute("ALTER TABLE marked_items ADD COLUMN tvdb_id TEXT DEFAULT ''")
+    if "media_type" not in existing:
+        conn.execute("ALTER TABLE marked_items ADD COLUMN media_type TEXT DEFAULT 'movie'")
     conn.commit()
     conn.close()
 
