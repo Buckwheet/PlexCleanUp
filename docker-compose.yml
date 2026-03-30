@@ -1,6 +1,6 @@
 services:
   plexcleanup:
-    build: .
+    image: rpgfilms/plexcleanup:latest
     container_name: plexcleanup
     ports:
       - "8141:8141"
