@@ -28,13 +28,23 @@ def get_all_movies(library_id: str) -> list[dict]:
     root = _get(f"/library/sections/{library_id}/all", {"includeGuids": "1"})
     movies = []
     for v in root.findall("Video"):
-        guids = {g.get("id", ""): g.get("id", "") for g in v.findall("Guid")}
         tmdb_id = imdb_id = ""
-        for gid in guids:
+
+        # New-style Guid child elements: <Guid id="tmdb://12345"/>
+        for g in v.findall("Guid"):
+            gid = g.get("id", "")
             if gid.startswith("tmdb://"):
                 tmdb_id = gid.replace("tmdb://", "")
             elif gid.startswith("imdb://"):
                 imdb_id = gid.replace("imdb://", "")
+
+        # Legacy guid attribute: com.plexapp.agents.imdb://tt0075314?lang=en
+        if not tmdb_id and not imdb_id:
+            legacy = v.get("guid", "")
+            if "imdb://" in legacy:
+                imdb_id = legacy.split("imdb://")[1].split("?")[0]
+            elif "themoviedb://" in legacy:
+                tmdb_id = legacy.split("themoviedb://")[1].split("?")[0]
 
         file_size = 0
         for media in v.findall("Media"):
