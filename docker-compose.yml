@@ -3,7 +3,7 @@ services:
     build: .
     container_name: plexcleanup
     ports:
-      - "8080:8080"
+      - "81414:81414"
     environment:
       - PLEX_URL=http://localhost:32400
       - PLEX_TOKEN=your_plex_token

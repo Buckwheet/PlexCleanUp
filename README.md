@@ -19,7 +19,7 @@ cp docker-compose.yml docker-compose.override.yml
 docker compose up -d
 ```
 
-Open `http://your-server:8080` in your browser.
+Open `http://your-server:81414` in your browser.
 
 ## Configuration
 
@@ -39,7 +39,7 @@ Open `http://your-server:8080` in your browser.
 1. In the Docker tab, click "Add Container"
 2. Set the repository to build from this repo, or build the image and push to your registry
 3. Add the environment variables above with your Plex/Radarr details
-4. Map port `8080` and add a volume for `/app/data` to persist the database
+4. Map port `81414` and add a volume for `/app/data` to persist the database
 
 ## Finding Your Plex Token
 
