@@ -139,6 +139,12 @@ def delete_now(body: RatingKeys):
         rid = radarr_client.find_radarr_id(tmdb_id, imdb_id, lookup)
         log.info(f"Delete lookup: title={c.get('title')} tmdb={tmdb_id} imdb={imdb_id} radarr_id={rid}")
         try:
+            # Get file path before deleting so we can do a partial Plex scan
+            scan_path = None
+            try:
+                scan_path = plex_client.get_movie_file_path(rk)
+            except Exception:
+                pass
             if rid:
                 radarr_client.delete_movie(rid)
                 log.info(f"Radarr delete sent for id={rid}")
@@ -149,7 +155,7 @@ def delete_now(body: RatingKeys):
                 "INSERT INTO deletion_log (title, year, file_size, method) VALUES (?,?,?,?)",
                 (c["title"], c.get("year"), c.get("file_size", 0), "immediate"),
             )
-            deleted.append(rk)
+            deleted.append({"rk": rk, "path": scan_path})
         except Exception:
             log.exception(f"Failed to delete {c.get('title')}")
 
@@ -158,13 +164,14 @@ def delete_now(body: RatingKeys):
 
     if deleted:
         try:
-            plex_client.remove_from_collection(deleted)
+            plex_client.remove_from_collection([d["rk"] for d in deleted])
         except Exception:
             pass
-        try:
-            plex_client.scan_library()
-        except Exception:
-            pass
+        for d in deleted:
+            try:
+                plex_client.scan_library(d.get("path"))
+            except Exception:
+                pass
 
     run_scan()
     return {"deleted": len(deleted), "daily_remaining": DAILY_DELETE_LIMIT - deletions_today()}

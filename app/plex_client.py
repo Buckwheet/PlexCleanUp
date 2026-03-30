@@ -141,12 +141,28 @@ def add_to_collection(rating_keys: list[str]):
         )
 
 
-def scan_library():
-    """Trigger a Plex library scan and empty trash to clean up deleted items."""
+def get_movie_file_path(rating_key: str) -> str | None:
+    """Get the file path for a movie by its ratingKey."""
+    root = _get(f"/library/metadata/{rating_key}")
+    for v in root.findall("Video"):
+        for media in v.findall("Media"):
+            for part in media.findall("Part"):
+                f = part.get("file")
+                if f:
+                    # Return the parent directory of the file
+                    return f.rsplit("/", 1)[0] if "/" in f else f.rsplit("\\", 1)[0]
+    return None
+
+
+def scan_library(path: str = None):
+    """Trigger a Plex library scan. If path is given, only scan that folder."""
     lib_id = get_movie_library_id()
     if not lib_id:
         return
-    httpx.get(f"{PLEX_URL}/library/sections/{lib_id}/refresh", headers=_headers(), timeout=30)
+    params = {}
+    if path:
+        params["path"] = path
+    httpx.get(f"{PLEX_URL}/library/sections/{lib_id}/refresh", headers=_headers(), params=params, timeout=30)
     httpx.put(f"{PLEX_URL}/library/sections/{lib_id}/emptyTrash", headers=_headers(), timeout=30)
 
 
