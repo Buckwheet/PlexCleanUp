@@ -82,6 +82,10 @@ def run_cleanup():
                 plex_client.remove_from_collection(deleted_keys)
             except Exception:
                 log.exception("Failed to remove items from collection")
+            try:
+                plex_client.scan_library()
+            except Exception:
+                log.exception("Failed to trigger Plex library scan")
 
         run_scan()  # refresh candidates
     except Exception:

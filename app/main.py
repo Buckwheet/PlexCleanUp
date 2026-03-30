@@ -161,6 +161,10 @@ def delete_now(body: RatingKeys):
             plex_client.remove_from_collection(deleted)
         except Exception:
             pass
+        try:
+            plex_client.scan_library()
+        except Exception:
+            pass
 
     run_scan()
     return {"deleted": len(deleted), "daily_remaining": DAILY_DELETE_LIMIT - deletions_today()}

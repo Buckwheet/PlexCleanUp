@@ -141,6 +141,15 @@ def add_to_collection(rating_keys: list[str]):
         )
 
 
+def scan_library():
+    """Trigger a Plex library scan and empty trash to clean up deleted items."""
+    lib_id = get_movie_library_id()
+    if not lib_id:
+        return
+    httpx.get(f"{PLEX_URL}/library/sections/{lib_id}/refresh", headers=_headers(), timeout=30)
+    httpx.put(f"{PLEX_URL}/library/sections/{lib_id}/emptyTrash", headers=_headers(), timeout=30)
+
+
 def remove_from_collection(rating_keys: list[str]):
     """Remove movies from the 'Leaving Plex Soon' collection."""
     lib_id = get_movie_library_id()
