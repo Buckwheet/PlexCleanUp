@@ -91,6 +91,7 @@ def mark(body: RatingKeys):
 
 @app.post("/api/delete-now")
 def delete_now(body: RatingKeys):
+    log = logging.getLogger("plexcleanup")
     if len(body.rating_keys) > MAX_DELETE_PER_REQUEST:
         raise HTTPException(400, f"Cannot delete more than {MAX_DELETE_PER_REQUEST} items at once")
     today_count = deletions_today()
@@ -106,6 +107,15 @@ def delete_now(body: RatingKeys):
     candidates = get_cached_candidates()
     clookup = {c["ratingKey"]: c for c in candidates}
 
+    # Build a fresh Plex GUID lookup for marked items with missing IDs
+    plex_lookup = {}
+    try:
+        lib_id = plex_client.get_movie_library_id()
+        if lib_id:
+            plex_lookup = {m["ratingKey"]: m for m in plex_client.get_all_movies(lib_id)}
+    except Exception:
+        log.exception("Failed to fetch Plex movies for GUID lookup")
+
     for rk in body.rating_keys:
         # Try candidates first, then marked items
         c = clookup.get(rk)
@@ -115,12 +125,25 @@ def delete_now(body: RatingKeys):
                 c = {"ratingKey": rk, "title": row["title"], "year": row["year"],
                      "file_size": row["file_size"], "tmdb_id": row["tmdb_id"], "imdb_id": row["imdb_id"]}
         if not c:
+            log.warning(f"Rating key {rk} not found in candidates or marked items")
             continue
 
-        rid = radarr_client.find_radarr_id(c.get("tmdb_id", ""), c.get("imdb_id", ""), lookup)
+        # If GUIDs are missing, try to get them from Plex
+        tmdb_id = c.get("tmdb_id", "")
+        imdb_id = c.get("imdb_id", "")
+        if not tmdb_id and not imdb_id and rk in plex_lookup:
+            tmdb_id = plex_lookup[rk].get("tmdb_id", "")
+            imdb_id = plex_lookup[rk].get("imdb_id", "")
+            log.info(f"Resolved GUIDs from Plex for {c.get('title')}: tmdb={tmdb_id} imdb={imdb_id}")
+
+        rid = radarr_client.find_radarr_id(tmdb_id, imdb_id, lookup)
+        log.info(f"Delete lookup: title={c.get('title')} tmdb={tmdb_id} imdb={imdb_id} radarr_id={rid}")
         try:
             if rid:
                 radarr_client.delete_movie(rid)
+                log.info(f"Radarr delete sent for id={rid}")
+            else:
+                log.warning(f"No Radarr match for {c.get('title')} - skipping Radarr delete")
             db.execute("DELETE FROM marked_items WHERE plex_rating_key=?", (rk,))
             db.execute(
                 "INSERT INTO deletion_log (title, year, file_size, method) VALUES (?,?,?,?)",
@@ -128,7 +151,7 @@ def delete_now(body: RatingKeys):
             )
             deleted.append(rk)
         except Exception:
-            logging.getLogger("plexcleanup").exception(f"Failed to delete {c.get('title')}")
+            log.exception(f"Failed to delete {c.get('title')}")
 
     db.commit()
     db.close()
