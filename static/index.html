@@ -152,7 +152,7 @@ function sortItems(items) {
 }
 
 async function loadCandidates() {
-  candidateData = await api(`candidates?page=${currentPage}&page_size=100`);
+  candidateData = await api(`candidates?page=1&page_size=10000`);
   document.getElementById('candidateCount').textContent = candidateData.total;
   renderCandidates();
 }
