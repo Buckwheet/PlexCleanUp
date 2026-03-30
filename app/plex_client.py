@@ -60,12 +60,23 @@ def get_all_shows(library_id: str) -> list[dict]:
             "addedAt": int(d.get("addedAt", 0)),
             "viewCount": int(d.get("viewedLeafCount", 0)),
             "leafCount": int(d.get("leafCount", 0)),
-            "file_size": 0,  # would need per-episode query, skip for now
+            "file_size": 0,
             "tvdb_id": tvdb_id,
             "imdb_id": imdb_id,
             "media_type": "show",
         })
     return shows
+
+
+def get_show_size(rating_key: str) -> int:
+    """Get total file size for all episodes of a show."""
+    total = 0
+    root = _get(f"/library/metadata/{rating_key}/allLeaves")
+    for v in root.findall("Video"):
+        for media in v.findall("Media"):
+            for part in media.findall("Part"):
+                total += int(part.get("size", 0))
+    return total
 
 
 def get_all_movies(library_id: str) -> list[dict]:
@@ -172,6 +183,10 @@ def get_candidates() -> list[dict]:
                 user_plays[name] = user_plays.get(name, 0) + 1
             s["user_plays"] = user_plays
             if s["addedAt"] < cutoff and s["viewCount"] == 0 and not plays:
+                try:
+                    s["file_size"] = get_show_size(rk)
+                except Exception:
+                    pass
                 candidates.append(s)
 
     candidates.sort(key=lambda x: x["file_size"], reverse=True)
