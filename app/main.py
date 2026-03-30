@@ -46,7 +46,7 @@ def limits():
 
 
 @app.get("/api/candidates")
-def candidates(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=1, le=50)):
+def candidates(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=1, le=10000)):
     all_c = get_cached_candidates()
     start = (page - 1) * page_size
     end = start + page_size
