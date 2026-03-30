@@ -92,4 +92,22 @@ def start_scheduler():
     scheduler.add_job(run_scan, "interval", hours=SCAN_INTERVAL_HOURS, id="scan", replace_existing=True)
     scheduler.add_job(run_cleanup, "interval", hours=1, id="cleanup", replace_existing=True)
     scheduler.start()
+    sync_collection()
     run_scan()  # initial scan on startup
+
+
+def sync_collection():
+    """Ensure all pending marked items are in the Plex collection."""
+    log.info("Syncing marked items with Plex collection...")
+    try:
+        db = get_db()
+        rows = db.execute("SELECT plex_rating_key FROM marked_items WHERE status='pending'").fetchall()
+        db.close()
+        keys = [r["plex_rating_key"] for r in rows]
+        if keys:
+            plex_client.add_to_collection(keys)
+            log.info(f"Synced {len(keys)} items to collection.")
+        else:
+            log.info("No pending items to sync.")
+    except Exception:
+        log.exception("Collection sync failed")
