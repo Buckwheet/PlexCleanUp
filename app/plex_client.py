@@ -120,7 +120,7 @@ def add_to_collection(rating_keys: list[str]):
     lib_id = get_movie_library_id()
     if not lib_id:
         return
-    col_key = _ensure_collection(lib_id, "Leaving Plex Soon")
+    col_key = _ensure_collection(lib_id, "! Leaving Plex Soon")
     machine_id = _get("/").get("machineIdentifier", "")
     for rk in rating_keys:
         httpx.put(
@@ -136,7 +136,7 @@ def remove_from_collection(rating_keys: list[str]):
     lib_id = get_movie_library_id()
     if not lib_id:
         return
-    col_key = _find_collection(lib_id, "Leaving Plex Soon")
+    col_key = _find_collection(lib_id, "! Leaving Plex Soon")
     if not col_key:
         return
     for rk in rating_keys:
