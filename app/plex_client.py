@@ -134,8 +134,9 @@ def get_play_history() -> dict[str, list[dict]]:
         if rk:
             history.setdefault(rk, []).append(record)
         # Map episode plays to the parent show
-        gp_rk = v.get("grandparentRatingKey")
-        if gp_rk:
+        gp_key = v.get("grandparentKey", "")
+        if gp_key:
+            gp_rk = gp_key.rsplit("/", 1)[-1]
             history.setdefault(gp_rk, []).append(record)
     return history
 
