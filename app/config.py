@@ -1,8 +1,8 @@
 import os
 
-PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
+PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400").rstrip("/")
 PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
-RADARR_URL = os.getenv("RADARR_URL", "http://localhost:7878")
+RADARR_URL = os.getenv("RADARR_URL", "http://localhost:7878").rstrip("/")
 RADARR_API_KEY = os.getenv("RADARR_API_KEY", "")
 PRUNE_DAYS = int(os.getenv("PRUNE_DAYS", "90"))
 GRACE_PERIOD_DAYS = int(os.getenv("GRACE_PERIOD_DAYS", "14"))

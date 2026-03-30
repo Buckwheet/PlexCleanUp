@@ -12,6 +12,8 @@ def _headers():
 def _get_all_movies() -> list[dict]:
     r = httpx.get(f"{RADARR_URL}/api/v3/movie", headers=_headers(), timeout=60)
     r.raise_for_status()
+    if not r.text or r.text[0] != '[':
+        raise ValueError(f"Radarr returned unexpected response (check RADARR_URL): {r.text[:100]}")
     return r.json()
 
 
