@@ -1,0 +1,21 @@
+services:
+  plexcleanup:
+    build: .
+    container_name: plexcleanup
+    ports:
+      - "8080:8080"
+    environment:
+      - PLEX_URL=http://localhost:32400
+      - PLEX_TOKEN=your_plex_token
+      - RADARR_URL=http://localhost:7878
+      - RADARR_API_KEY=your_radarr_api_key
+      - PRUNE_DAYS=90
+      - GRACE_PERIOD_DAYS=14
+      - SCAN_INTERVAL_HOURS=24
+      - PAGE_SIZE=15
+    volumes:
+      - plexcleanup_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  plexcleanup_data:

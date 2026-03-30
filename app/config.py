@@ -1,0 +1,11 @@
+import os
+
+PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
+PLEX_TOKEN = os.getenv("PLEX_TOKEN", "")
+RADARR_URL = os.getenv("RADARR_URL", "http://localhost:7878")
+RADARR_API_KEY = os.getenv("RADARR_API_KEY", "")
+PRUNE_DAYS = int(os.getenv("PRUNE_DAYS", "90"))
+GRACE_PERIOD_DAYS = int(os.getenv("GRACE_PERIOD_DAYS", "14"))
+SCAN_INTERVAL_HOURS = int(os.getenv("SCAN_INTERVAL_HOURS", "24"))
+PAGE_SIZE = int(os.getenv("PAGE_SIZE", "15"))
+DB_PATH = os.getenv("DB_PATH", "/app/data/plexcleanup.db")
