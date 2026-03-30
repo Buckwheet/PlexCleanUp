@@ -64,15 +64,27 @@ def get_all_movies(library_id: str) -> list[dict]:
     return movies
 
 
-def get_play_history() -> set[str]:
-    """Return set of ratingKeys that have any play history across all users."""
-    played = set()
+def get_play_history() -> dict[str, list[dict]]:
+    """Return dict of ratingKey -> list of play records with user info."""
+    history: dict[str, list[dict]] = {}
     root = _get("/status/sessions/history/all")
     for v in root.findall("Video"):
         rk = v.get("ratingKey")
         if rk:
-            played.add(rk)
-    return played
+            history.setdefault(rk, []).append({
+                "accountID": v.get("accountID", ""),
+                "viewedAt": int(v.get("viewedAt", 0)),
+            })
+    return history
+
+
+def get_accounts() -> dict[str, str]:
+    """Return dict of accountID -> account name."""
+    accounts = {}
+    root = _get("/accounts")
+    for a in root.findall("Account"):
+        accounts[a.get("id", "")] = a.get("name", "Unknown")
+    return accounts
 
 
 def get_candidates() -> list[dict]:
@@ -81,11 +93,23 @@ def get_candidates() -> list[dict]:
     if not lib_id:
         return []
     movies = get_all_movies(lib_id)
-    played = get_play_history()
+    history = get_play_history()
+    accounts = get_accounts()
     cutoff = int(time.time()) - (PRUNE_DAYS * 86400)
     candidates = []
     for m in movies:
-        if m["addedAt"] < cutoff and m["viewCount"] == 0 and m["ratingKey"] not in played:
+        rk = m["ratingKey"]
+        plays = history.get(rk, [])
+        m["play_count"] = len(plays)
+        m["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
+        # Build per-user play info
+        user_plays: dict[str, int] = {}
+        for p in plays:
+            name = accounts.get(p["accountID"], f"User {p['accountID']}")
+            user_plays[name] = user_plays.get(name, 0) + 1
+        m["user_plays"] = user_plays
+
+        if m["addedAt"] < cutoff and m["viewCount"] == 0 and not plays:
             candidates.append(m)
     candidates.sort(key=lambda x: x["file_size"], reverse=True)
     return candidates

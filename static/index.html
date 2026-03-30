@@ -92,6 +92,8 @@ let currentTab = 'candidates';
 let currentPage = 1;
 let pendingDeleteKeys = [];
 let safetyLimits = {};
+let currentSort = {col: 'file_size', dir: 'desc'};
+let candidateData = null;
 
 async function loadLimits() {
   safetyLimits = await api('limits');
@@ -125,28 +127,73 @@ async function api(path, opts) {
   return r.json();
 }
 
+function sortIcon(col) {
+  if (currentSort.col !== col) return ' ↕';
+  return currentSort.dir === 'asc' ? ' ↑' : ' ↓';
+}
+
+function toggleSort(col) {
+  if (currentSort.col === col) currentSort.dir = currentSort.dir === 'asc' ? 'desc' : 'asc';
+  else { currentSort.col = col; currentSort.dir = col === 'title' ? 'asc' : 'desc'; }
+  renderCandidates();
+}
+
+function sortItems(items) {
+  const col = currentSort.col;
+  const dir = currentSort.dir === 'asc' ? 1 : -1;
+  return [...items].sort((a,b) => {
+    let va = a[col], vb = b[col];
+    if (col === 'title') { va = (va||'').toLowerCase(); vb = (vb||'').toLowerCase(); }
+    if (col === 'days') { va = daysSince(a.addedAt); vb = daysSince(b.addedAt); }
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+}
+
 async function loadCandidates() {
-  const data = await api(`candidates?page=${currentPage}`);
-  document.getElementById('candidateCount').textContent = data.total;
+  candidateData = await api(`candidates?page=${currentPage}&page_size=100`);
+  document.getElementById('candidateCount').textContent = candidateData.total;
+  renderCandidates();
+}
+
+function renderCandidates() {
   const el = document.getElementById('candidatesTab');
-  if (!data.items.length) { el.innerHTML = '<div class="empty">No candidates found. All content is being watched! 🎉</div>'; return; }
-  let html = `<table><tr><th>Title</th><th>Year</th><th>Added</th><th>Days</th><th>Size</th><th>Actions</th></tr>`;
-  for (const m of data.items) {
+  if (!candidateData || !candidateData.items.length) { el.innerHTML = '<div class="empty">No candidates found. All content is being watched! 🎉</div>'; return; }
+  const sorted = sortItems(candidateData.items);
+  const pageSize = safetyLimits.max_mark_per_request || 15;
+  const start = (currentPage - 1) * pageSize;
+  const paged = sorted.slice(start, start + pageSize);
+  const thStyle = 'cursor:pointer;user-select:none;';
+  let html = `<table><tr>
+    <th style="${thStyle}" onclick="toggleSort('title')">Title${sortIcon('title')}</th>
+    <th style="${thStyle}" onclick="toggleSort('year')">Year${sortIcon('year')}</th>
+    <th style="${thStyle}" onclick="toggleSort('addedAt')">Added${sortIcon('addedAt')}</th>
+    <th style="${thStyle}" onclick="toggleSort('days')">Days${sortIcon('days')}</th>
+    <th style="${thStyle}" onclick="toggleSort('file_size')">Size${sortIcon('file_size')}</th>
+    <th style="${thStyle}" onclick="toggleSort('play_count')">Plays${sortIcon('play_count')}</th>
+    <th>Viewers</th>
+    <th>Actions</th></tr>`;
+  for (const m of paged) {
+    const viewers = m.user_plays ? Object.entries(m.user_plays).map(([u,c])=>`${u}(${c})`).join(', ') : '';
+    const lastViewed = m.last_viewed_at ? new Date(m.last_viewed_at*1000).toLocaleDateString() : 'Never';
     html += `<tr>
       <td>${m.title}</td><td>${m.year||''}</td>
       <td>${new Date(m.addedAt*1000).toLocaleDateString()}</td>
       <td>${daysSince(m.addedAt)}d</td>
       <td>${formatSize(m.file_size)}</td>
+      <td>${m.play_count||0}</td>
+      <td style="font-size:0.75rem;color:var(--muted)">${viewers||'—'}</td>
       <td>
         <button class="btn btn-mark" onclick="markItem('${m.ratingKey}')">Mark</button>
         <button class="btn btn-delete" onclick="showDeleteModal(['${m.ratingKey}'])">Delete</button>
       </td></tr>`;
   }
   html += '</table>';
-  const pages = Math.ceil(data.total / data.page_size);
+  const pages = Math.ceil(sorted.length / pageSize);
   if (pages > 1) {
     html += '<div class="pagination">';
-    for (let i=1;i<=pages;i++) html += `<button class="btn ${i===currentPage?'active':''}" onclick="currentPage=${i};loadCandidates()">${i}</button>`;
+    for (let i=1;i<=pages;i++) html += `<button class="btn ${i===currentPage?'active':''}" onclick="currentPage=${i};renderCandidates()">${i}</button>`;
     html += '</div>';
   }
   el.innerHTML = html;
