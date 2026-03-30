@@ -9,6 +9,8 @@ services:
       - PLEX_TOKEN=your_plex_token
       - RADARR_URL=http://localhost:7878
       - RADARR_API_KEY=your_radarr_api_key
+      - SONARR_URL=http://localhost:8989
+      - SONARR_API_KEY=your_sonarr_api_key
       - PRUNE_DAYS=90
       - GRACE_PERIOD_DAYS=14
       - SCAN_INTERVAL_HOURS=24

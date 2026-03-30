@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from app.config import GRACE_PERIOD_DAYS, SCAN_INTERVAL_HOURS, DAILY_DELETE_LIMIT
 from app.db import get_db, deletions_today
-from app import radarr_client, plex_client
+from app import radarr_client, sonarr_client, plex_client
 
 log = logging.getLogger("plexcleanup.scheduler")
 scheduler = BackgroundScheduler()
@@ -54,16 +54,30 @@ def run_cleanup():
             return
 
         lookup = radarr_client.build_lookup()
+        sonarr_lookup = None
+        try:
+            sonarr_lookup = sonarr_client.build_lookup()
+        except Exception:
+            log.warning("Sonarr not available for cleanup")
         deleted_keys = []
 
         for item in expired:
             if deletions_today() >= DAILY_DELETE_LIMIT:
                 log.warning(f"Daily deletion limit ({DAILY_DELETE_LIMIT}) reached. Stopping cleanup.")
                 break
-            rid = radarr_client.find_radarr_id(item["tmdb_id"], item["imdb_id"], lookup)
+            media_type = item["media_type"] if "media_type" in item.keys() else "movie"
+            rid = None
+            if media_type == "show" and sonarr_lookup:
+                tvdb_id = item["tvdb_id"] if "tvdb_id" in item.keys() else ""
+                rid = sonarr_client.find_sonarr_id(tvdb_id, item["imdb_id"], sonarr_lookup)
+            else:
+                rid = radarr_client.find_radarr_id(item["tmdb_id"], item["imdb_id"], lookup)
             try:
                 if rid:
-                    radarr_client.delete_movie(rid)
+                    if media_type == "show" and sonarr_lookup:
+                        sonarr_client.delete_series(rid)
+                    else:
+                        radarr_client.delete_movie(rid)
                 db.execute("UPDATE marked_items SET status='deleted' WHERE id=?", (item["id"],))
                 db.execute(
                     "INSERT INTO deletion_log (title, year, file_size, method) VALUES (?,?,?,?)",

@@ -19,6 +19,8 @@ def init_db():
             file_size INTEGER DEFAULT 0,
             tmdb_id TEXT,
             imdb_id TEXT,
+            tvdb_id TEXT,
+            media_type TEXT DEFAULT 'movie',
             marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'pending'
         );

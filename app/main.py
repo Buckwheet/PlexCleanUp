@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from app.config import PAGE_SIZE, GRACE_PERIOD_DAYS, MAX_DELETE_PER_REQUEST, MAX_MARK_PER_REQUEST, DAILY_DELETE_LIMIT, DRY_RUN
 from app.db import init_db, get_db, deletions_today
-from app import plex_client, radarr_client
+from app import plex_client, radarr_client, sonarr_client
 from app.scheduler import start_scheduler, run_scan, get_cached_candidates
 
 logging.basicConfig(level=logging.INFO)
@@ -72,8 +72,8 @@ def mark(body: RatingKeys):
             continue
         try:
             db.execute(
-                "INSERT OR IGNORE INTO marked_items (plex_rating_key, title, year, file_size, tmdb_id, imdb_id) VALUES (?,?,?,?,?,?)",
-                (rk, c["title"], c["year"], c["file_size"], c["tmdb_id"], c["imdb_id"]),
+                "INSERT OR IGNORE INTO marked_items (plex_rating_key, title, year, file_size, tmdb_id, imdb_id, tvdb_id, media_type) VALUES (?,?,?,?,?,?,?,?)",
+                (rk, c["title"], c["year"], c["file_size"], c.get("tmdb_id",""), c.get("imdb_id",""), c.get("tvdb_id",""), c.get("media_type","movie")),
             )
             added.append(rk)
         except Exception:
@@ -100,7 +100,12 @@ def delete_now(body: RatingKeys):
         raise HTTPException(429, f"Daily deletion limit ({DAILY_DELETE_LIMIT}) reached. {remaining} deletions remaining today.")
 
     db = get_db()
-    lookup = radarr_client.build_lookup()
+    radarr_lookup = radarr_client.build_lookup()
+    sonarr_lookup = None
+    try:
+        sonarr_lookup = sonarr_client.build_lookup()
+    except Exception:
+        log.warning("Sonarr not available, skipping TV show lookups")
     deleted = []
 
     # Check both candidates and marked items
@@ -131,13 +136,22 @@ def delete_now(body: RatingKeys):
         # If GUIDs are missing, try to get them from Plex
         tmdb_id = c.get("tmdb_id", "")
         imdb_id = c.get("imdb_id", "")
-        if not tmdb_id and not imdb_id and rk in plex_lookup:
+        tvdb_id = c.get("tvdb_id", "")
+        media_type = c.get("media_type", "movie")
+        if not tmdb_id and not imdb_id and not tvdb_id and rk in plex_lookup:
             tmdb_id = plex_lookup[rk].get("tmdb_id", "")
             imdb_id = plex_lookup[rk].get("imdb_id", "")
-            log.info(f"Resolved GUIDs from Plex for {c.get('title')}: tmdb={tmdb_id} imdb={imdb_id}")
+            tvdb_id = plex_lookup[rk].get("tvdb_id", "")
+            media_type = plex_lookup[rk].get("media_type", media_type)
+            log.info(f"Resolved GUIDs from Plex for {c.get('title')}: tmdb={tmdb_id} imdb={imdb_id} tvdb={tvdb_id}")
 
-        rid = radarr_client.find_radarr_id(tmdb_id, imdb_id, lookup)
-        log.info(f"Delete lookup: title={c.get('title')} tmdb={tmdb_id} imdb={imdb_id} radarr_id={rid}")
+        rid = None
+        if media_type == "show" and sonarr_lookup:
+            rid = sonarr_client.find_sonarr_id(tvdb_id, imdb_id, sonarr_lookup)
+            log.info(f"Delete lookup: title={c.get('title')} type=show tvdb={tvdb_id} imdb={imdb_id} sonarr_id={rid}")
+        else:
+            rid = radarr_client.find_radarr_id(tmdb_id, imdb_id, radarr_lookup)
+            log.info(f"Delete lookup: title={c.get('title')} type=movie tmdb={tmdb_id} imdb={imdb_id} radarr_id={rid}")
         try:
             # Get file path before deleting so we can do a partial Plex scan
             scan_path = None
@@ -146,10 +160,14 @@ def delete_now(body: RatingKeys):
             except Exception:
                 pass
             if rid:
-                radarr_client.delete_movie(rid)
-                log.info(f"Radarr delete sent for id={rid}")
+                if media_type == "show" and sonarr_lookup:
+                    sonarr_client.delete_series(rid)
+                    log.info(f"Sonarr delete sent for id={rid}")
+                else:
+                    radarr_client.delete_movie(rid)
+                    log.info(f"Radarr delete sent for id={rid}")
             else:
-                log.warning(f"No Radarr match for {c.get('title')} - skipping Radarr delete")
+                log.warning(f"No arr match for {c.get('title')} - skipping delete")
             db.execute("DELETE FROM marked_items WHERE plex_rating_key=?", (rk,))
             db.execute(
                 "INSERT INTO deletion_log (title, year, file_size, method) VALUES (?,?,?,?)",

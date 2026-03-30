@@ -23,6 +23,51 @@ def get_movie_library_id() -> str | None:
     return None
 
 
+def get_tv_library_id() -> str | None:
+    """Find the first TV show library section ID."""
+    root = _get("/library/sections")
+    for d in root.findall("Directory"):
+        if d.get("type") == "show":
+            return d.get("key")
+    return None
+
+
+def get_all_shows(library_id: str) -> list[dict]:
+    """Fetch all TV shows with GUIDs from a library section."""
+    root = _get(f"/library/sections/{library_id}/all", {"includeGuids": "1"})
+    shows = []
+    for d in root.findall("Directory"):
+        tvdb_id = imdb_id = ""
+
+        for g in d.findall("Guid"):
+            gid = g.get("id", "")
+            if gid.startswith("tvdb://"):
+                tvdb_id = gid.replace("tvdb://", "")
+            elif gid.startswith("imdb://"):
+                imdb_id = gid.replace("imdb://", "")
+
+        if not tvdb_id and not imdb_id:
+            legacy = d.get("guid", "")
+            if "thetvdb://" in legacy:
+                tvdb_id = legacy.split("thetvdb://")[1].split("?")[0].split("/")[0]
+            elif "imdb://" in legacy:
+                imdb_id = legacy.split("imdb://")[1].split("?")[0]
+
+        shows.append({
+            "ratingKey": d.get("ratingKey"),
+            "title": d.get("title", ""),
+            "year": int(d.get("year", 0)),
+            "addedAt": int(d.get("addedAt", 0)),
+            "viewCount": int(d.get("viewedLeafCount", 0)),
+            "leafCount": int(d.get("leafCount", 0)),
+            "file_size": 0,  # would need per-episode query, skip for now
+            "tvdb_id": tvdb_id,
+            "imdb_id": imdb_id,
+            "media_type": "show",
+        })
+    return shows
+
+
 def get_all_movies(library_id: str) -> list[dict]:
     """Fetch all movies with GUIDs from a library section."""
     root = _get(f"/library/sections/{library_id}/all", {"includeGuids": "1"})
@@ -88,29 +133,47 @@ def get_accounts() -> dict[str, str]:
 
 
 def get_candidates() -> list[dict]:
-    """Get movies added 90+ days ago with zero plays by any user."""
-    lib_id = get_movie_library_id()
-    if not lib_id:
-        return []
-    movies = get_all_movies(lib_id)
+    """Get movies and shows added 90+ days ago with zero plays by any user."""
     history = get_play_history()
     accounts = get_accounts()
     cutoff = int(time.time()) - (PRUNE_DAYS * 86400)
     candidates = []
-    for m in movies:
-        rk = m["ratingKey"]
-        plays = history.get(rk, [])
-        m["play_count"] = len(plays)
-        m["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
-        # Build per-user play info
-        user_plays: dict[str, int] = {}
-        for p in plays:
-            name = accounts.get(p["accountID"], f"User {p['accountID']}")
-            user_plays[name] = user_plays.get(name, 0) + 1
-        m["user_plays"] = user_plays
 
-        if m["addedAt"] < cutoff and m["viewCount"] == 0 and not plays:
-            candidates.append(m)
+    # Movies
+    lib_id = get_movie_library_id()
+    if lib_id:
+        movies = get_all_movies(lib_id)
+        for m in movies:
+            m["media_type"] = "movie"
+            rk = m["ratingKey"]
+            plays = history.get(rk, [])
+            m["play_count"] = len(plays)
+            m["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
+            user_plays: dict[str, int] = {}
+            for p in plays:
+                name = accounts.get(p["accountID"], f"User {p['accountID']}")
+                user_plays[name] = user_plays.get(name, 0) + 1
+            m["user_plays"] = user_plays
+            if m["addedAt"] < cutoff and m["viewCount"] == 0 and not plays:
+                candidates.append(m)
+
+    # TV Shows
+    tv_lib_id = get_tv_library_id()
+    if tv_lib_id:
+        shows = get_all_shows(tv_lib_id)
+        for s in shows:
+            rk = s["ratingKey"]
+            plays = history.get(rk, [])
+            s["play_count"] = len(plays)
+            s["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
+            user_plays: dict[str, int] = {}
+            for p in plays:
+                name = accounts.get(p["accountID"], f"User {p['accountID']}")
+                user_plays[name] = user_plays.get(name, 0) + 1
+            s["user_plays"] = user_plays
+            if s["addedAt"] < cutoff and s["viewCount"] == 0 and not plays:
+                candidates.append(s)
+
     candidates.sort(key=lambda x: x["file_size"], reverse=True)
     return candidates
 

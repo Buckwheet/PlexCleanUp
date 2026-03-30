@@ -167,6 +167,7 @@ function renderCandidates() {
   const thStyle = 'cursor:pointer;user-select:none;';
   let html = `<table><tr>
     <th style="${thStyle}" onclick="toggleSort('title')">Title${sortIcon('title')}</th>
+    <th style="${thStyle}" onclick="toggleSort('media_type')">Type${sortIcon('media_type')}</th>
     <th style="${thStyle}" onclick="toggleSort('year')">Year${sortIcon('year')}</th>
     <th style="${thStyle}" onclick="toggleSort('addedAt')">Added${sortIcon('addedAt')}</th>
     <th style="${thStyle}" onclick="toggleSort('days')">Days${sortIcon('days')}</th>
@@ -176,9 +177,9 @@ function renderCandidates() {
     <th>Actions</th></tr>`;
   for (const m of paged) {
     const viewers = m.user_plays ? Object.entries(m.user_plays).map(([u,c])=>`${u}(${c})`).join(', ') : '';
-    const lastViewed = m.last_viewed_at ? new Date(m.last_viewed_at*1000).toLocaleDateString() : 'Never';
+    const typeBadge = m.media_type === 'show' ? '<span class="badge badge-scheduled">TV</span>' : '<span class="badge badge-immediate">Film</span>';
     html += `<tr>
-      <td>${m.title}</td><td>${m.year||''}</td>
+      <td>${m.title}</td><td>${typeBadge}</td><td>${m.year||''}</td>
       <td>${new Date(m.addedAt*1000).toLocaleDateString()}</td>
       <td>${daysSince(m.addedAt)}d</td>
       <td>${formatSize(m.file_size)}</td>
@@ -238,7 +239,12 @@ async function loadHistory() {
 
 async function markItem(rk) {
   await api('mark', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rating_keys:[rk]})});
-  loadCandidates();
+  // Remove locally to avoid full reload resetting sort/page
+  if (candidateData && candidateData.items) {
+    candidateData.items = candidateData.items.filter(i => i.ratingKey !== rk);
+    candidateData.total = candidateData.items.length;
+  }
+  renderCandidates();
   loadScanState();
 }
 
@@ -259,7 +265,12 @@ async function confirmDelete() {
     return;
   }
   await r.json();
-  if (currentTab==='candidates') loadCandidates();
+  // Remove locally to preserve sort/page
+  if (candidateData && candidateData.items) {
+    candidateData.items = candidateData.items.filter(i => !pendingDeleteKeys.includes(i.ratingKey));
+    candidateData.total = candidateData.items.length;
+  }
+  if (currentTab==='candidates') renderCandidates();
   else if (currentTab==='marked') loadMarked();
   loadHistory();
   loadScanState();
