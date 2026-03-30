@@ -121,16 +121,22 @@ def get_all_movies(library_id: str) -> list[dict]:
 
 
 def get_play_history() -> dict[str, list[dict]]:
-    """Return dict of ratingKey -> list of play records with user info."""
+    """Return dict of ratingKey -> list of play records with user info.
+    For TV episodes, entries are also mapped to the grandparent (show) ratingKey."""
     history: dict[str, list[dict]] = {}
     root = _get("/status/sessions/history/all")
     for v in root.findall("Video"):
+        record = {
+            "accountID": v.get("accountID", ""),
+            "viewedAt": int(v.get("viewedAt", 0)),
+        }
         rk = v.get("ratingKey")
         if rk:
-            history.setdefault(rk, []).append({
-                "accountID": v.get("accountID", ""),
-                "viewedAt": int(v.get("viewedAt", 0)),
-            })
+            history.setdefault(rk, []).append(record)
+        # Map episode plays to the parent show
+        gp_rk = v.get("grandparentRatingKey")
+        if gp_rk:
+            history.setdefault(gp_rk, []).append(record)
     return history
 
 
