@@ -13,6 +13,7 @@ services:
       - GRACE_PERIOD_DAYS=14
       - SCAN_INTERVAL_HOURS=24
       - PAGE_SIZE=15
+      - DRY_RUN=true
     volumes:
       - plexcleanup_data:/app/data
     restart: unless-stopped

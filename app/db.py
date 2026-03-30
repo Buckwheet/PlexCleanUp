@@ -39,3 +39,12 @@ def init_db():
     """)
     conn.commit()
     conn.close()
+
+
+def deletions_today() -> int:
+    conn = get_db()
+    count = conn.execute(
+        "SELECT COUNT(*) as c FROM deletion_log WHERE deleted_at >= datetime('now', '-1 day')"
+    ).fetchone()["c"]
+    conn.close()
+    return count

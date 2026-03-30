@@ -1,12 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from app.config import PAGE_SIZE, GRACE_PERIOD_DAYS
-from app.db import init_db, get_db
+from app.config import PAGE_SIZE, GRACE_PERIOD_DAYS, MAX_DELETE_PER_REQUEST, MAX_MARK_PER_REQUEST, DAILY_DELETE_LIMIT, DRY_RUN
+from app.db import init_db, get_db, deletions_today
 from app import plex_client, radarr_client
 from app.scheduler import start_scheduler, run_scan, get_cached_candidates
 
@@ -30,7 +30,19 @@ class RatingKeys(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "dry_run": DRY_RUN}
+
+
+@app.get("/api/limits")
+def limits():
+    return {
+        "max_delete_per_request": MAX_DELETE_PER_REQUEST,
+        "max_mark_per_request": MAX_MARK_PER_REQUEST,
+        "daily_delete_limit": DAILY_DELETE_LIMIT,
+        "deletions_today": deletions_today(),
+        "daily_remaining": max(0, DAILY_DELETE_LIMIT - deletions_today()),
+        "dry_run": DRY_RUN,
+    }
 
 
 @app.get("/api/candidates")
@@ -48,6 +60,8 @@ def candidates(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=
 
 @app.post("/api/mark")
 def mark(body: RatingKeys):
+    if len(body.rating_keys) > MAX_MARK_PER_REQUEST:
+        raise HTTPException(400, f"Cannot mark more than {MAX_MARK_PER_REQUEST} items at once")
     candidates = get_cached_candidates()
     lookup = {c["ratingKey"]: c for c in candidates}
     db = get_db()
@@ -77,6 +91,13 @@ def mark(body: RatingKeys):
 
 @app.post("/api/delete-now")
 def delete_now(body: RatingKeys):
+    if len(body.rating_keys) > MAX_DELETE_PER_REQUEST:
+        raise HTTPException(400, f"Cannot delete more than {MAX_DELETE_PER_REQUEST} items at once")
+    today_count = deletions_today()
+    if today_count + len(body.rating_keys) > DAILY_DELETE_LIMIT:
+        remaining = max(0, DAILY_DELETE_LIMIT - today_count)
+        raise HTTPException(429, f"Daily deletion limit ({DAILY_DELETE_LIMIT}) reached. {remaining} deletions remaining today.")
+
     db = get_db()
     lookup = radarr_client.build_lookup()
     deleted = []
@@ -119,7 +140,7 @@ def delete_now(body: RatingKeys):
             pass
 
     run_scan()
-    return {"deleted": len(deleted)}
+    return {"deleted": len(deleted), "daily_remaining": DAILY_DELETE_LIMIT - deletions_today()}
 
 
 @app.get("/api/marked")

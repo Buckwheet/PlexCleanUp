@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.config import GRACE_PERIOD_DAYS, SCAN_INTERVAL_HOURS
-from app.db import get_db
+from app.config import GRACE_PERIOD_DAYS, SCAN_INTERVAL_HOURS, DAILY_DELETE_LIMIT
+from app.db import get_db, deletions_today
 from app import radarr_client, plex_client
 
 log = logging.getLogger("plexcleanup.scheduler")
@@ -57,6 +57,9 @@ def run_cleanup():
         deleted_keys = []
 
         for item in expired:
+            if deletions_today() >= DAILY_DELETE_LIMIT:
+                log.warning(f"Daily deletion limit ({DAILY_DELETE_LIMIT}) reached. Stopping cleanup.")
+                break
             rid = radarr_client.find_radarr_id(item["tmdb_id"], item["imdb_id"], lookup)
             try:
                 if rid:

@@ -61,7 +61,9 @@ tr:hover td { background: rgba(233,69,96,0.05); }
     <span>📦 Total Freed: <strong id="totalFreed">0 GB</strong></span>
     <span>⏳ Marked: <strong id="markedCount">0</strong></span>
     <span>🎯 Candidates: <strong id="candidateCount">0</strong></span>
+    <span>🗑️ Deletes today: <strong id="dailyRemaining">-</strong></span>
   </div>
+  <div id="dryRunBanner" style="display:none;background:#f0a500;color:#000;padding:8px 16px;border-radius:4px;margin-bottom:16px;font-weight:600;text-align:center;">⚠️ DRY RUN MODE — No actual deletions will occur</div>
 
   <div class="tabs">
     <button class="tab active" onclick="switchTab('candidates')">Candidates</button>
@@ -89,6 +91,13 @@ tr:hover td { background: rgba(233,69,96,0.05); }
 let currentTab = 'candidates';
 let currentPage = 1;
 let pendingDeleteKeys = [];
+let safetyLimits = {};
+
+async function loadLimits() {
+  safetyLimits = await api('limits');
+  document.getElementById('dailyRemaining').textContent = `${safetyLimits.deletions_today} / ${safetyLimits.daily_delete_limit}`;
+  document.getElementById('dryRunBanner').style.display = safetyLimits.dry_run ? '' : 'none';
+}
 
 function formatSize(bytes) {
   if (!bytes) return '0 B';
@@ -196,11 +205,18 @@ function closeModal() { document.getElementById('confirmModal').classList.remove
 
 async function confirmDelete() {
   closeModal();
-  await api('delete-now', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rating_keys:pendingDeleteKeys})});
+  const r = await fetch('/api/delete-now', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rating_keys:pendingDeleteKeys})});
+  if (!r.ok) {
+    const err = await r.json();
+    alert('⚠️ ' + (err.detail || 'Delete failed'));
+    return;
+  }
+  await r.json();
   if (currentTab==='candidates') loadCandidates();
   else if (currentTab==='marked') loadMarked();
   loadHistory();
   loadScanState();
+  loadLimits();
 }
 
 async function scanNow() {
@@ -219,6 +235,7 @@ async function loadScanState() {
 }
 
 // Init
+loadLimits();
 loadCandidates();
 loadScanState();
 loadHistory().then(() => {}); // load total freed

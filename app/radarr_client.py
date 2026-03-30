@@ -1,5 +1,8 @@
+import logging
 import httpx
-from app.config import RADARR_URL, RADARR_API_KEY
+from app.config import RADARR_URL, RADARR_API_KEY, DRY_RUN
+
+log = logging.getLogger("plexcleanup.radarr")
 
 
 def _headers():
@@ -36,6 +39,9 @@ def find_radarr_id(tmdb_id: str, imdb_id: str, lookup: dict) -> int | None:
 
 def delete_movie(radarr_id: int):
     """Delete movie from Radarr with file deletion and import exclusion."""
+    if DRY_RUN:
+        log.info(f"DRY RUN: Would delete Radarr movie id={radarr_id}")
+        return
     r = httpx.delete(
         f"{RADARR_URL}/api/v3/movie/{radarr_id}",
         headers=_headers(),
