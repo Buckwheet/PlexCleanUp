@@ -150,6 +150,43 @@ def get_accounts() -> dict[str, str]:
     return accounts
 
 
+def _enrich_with_history(items: list[dict], history: dict, accounts: dict):
+    """Add play_count, last_viewed_at, and user_plays to each item."""
+    for m in items:
+        rk = m["ratingKey"]
+        plays = history.get(rk, [])
+        m["play_count"] = len(plays)
+        m["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
+        user_plays: dict[str, int] = {}
+        for p in plays:
+            name = accounts.get(p["accountID"], f"User {p['accountID']}")
+            user_plays[name] = user_plays.get(name, 0) + 1
+        m["user_plays"] = user_plays
+
+
+def get_all_library() -> list[dict]:
+    """Get all movies and shows with full watch analytics."""
+    history = get_play_history()
+    accounts = get_accounts()
+    items = []
+
+    lib_id = get_movie_library_id()
+    if lib_id:
+        movies = get_all_movies(lib_id)
+        for m in movies:
+            m["media_type"] = "movie"
+        _enrich_with_history(movies, history, accounts)
+        items.extend(movies)
+
+    tv_lib_id = get_tv_library_id()
+    if tv_lib_id:
+        shows = get_all_shows(tv_lib_id)
+        _enrich_with_history(shows, history, accounts)
+        items.extend(shows)
+
+    return items
+
+
 def get_candidates() -> list[dict]:
     """Get movies and shows added 90+ days ago with zero plays by any user."""
     history = get_play_history()
@@ -157,41 +194,24 @@ def get_candidates() -> list[dict]:
     cutoff = int(time.time()) - (PRUNE_DAYS * 86400)
     candidates = []
 
-    # Movies
     lib_id = get_movie_library_id()
     if lib_id:
         movies = get_all_movies(lib_id)
         for m in movies:
             m["media_type"] = "movie"
-            rk = m["ratingKey"]
-            plays = history.get(rk, [])
-            m["play_count"] = len(plays)
-            m["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
-            user_plays: dict[str, int] = {}
-            for p in plays:
-                name = accounts.get(p["accountID"], f"User {p['accountID']}")
-                user_plays[name] = user_plays.get(name, 0) + 1
-            m["user_plays"] = user_plays
-            if m["addedAt"] < cutoff and m["viewCount"] == 0 and not plays:
+        _enrich_with_history(movies, history, accounts)
+        for m in movies:
+            if m["addedAt"] < cutoff and m["viewCount"] == 0 and not m["play_count"]:
                 candidates.append(m)
 
-    # TV Shows
     tv_lib_id = get_tv_library_id()
     if tv_lib_id:
         shows = get_all_shows(tv_lib_id)
+        _enrich_with_history(shows, history, accounts)
         for s in shows:
-            rk = s["ratingKey"]
-            plays = history.get(rk, [])
-            s["play_count"] = len(plays)
-            s["last_viewed_at"] = max((p["viewedAt"] for p in plays), default=0)
-            user_plays: dict[str, int] = {}
-            for p in plays:
-                name = accounts.get(p["accountID"], f"User {p['accountID']}")
-                user_plays[name] = user_plays.get(name, 0) + 1
-            s["user_plays"] = user_plays
-            if s["addedAt"] < cutoff and s["viewCount"] == 0 and not plays:
+            if s["addedAt"] < cutoff and s["viewCount"] == 0 and not s["play_count"]:
                 try:
-                    s["file_size"] = get_show_size(rk)
+                    s["file_size"] = get_show_size(s["ratingKey"])
                 except Exception:
                     pass
                 candidates.append(s)

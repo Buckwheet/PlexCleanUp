@@ -8,14 +8,19 @@ from app import radarr_client, sonarr_client, plex_client
 log = logging.getLogger("plexcleanup.scheduler")
 scheduler = BackgroundScheduler()
 _cached_candidates: list[dict] = []
+_cached_library: list[dict] = []
 
 
 def get_cached_candidates() -> list[dict]:
     return _cached_candidates
 
 
+def get_cached_library() -> list[dict]:
+    return _cached_library
+
+
 def run_scan():
-    global _cached_candidates
+    global _cached_candidates, _cached_library
     log.info("Running candidate scan...")
     try:
         db = get_db()
@@ -24,6 +29,7 @@ def run_scan():
         ).fetchall()}
         db.close()
 
+        _cached_library = plex_client.get_all_library()
         all_candidates = plex_client.get_candidates()
         _cached_candidates = [c for c in all_candidates if c["ratingKey"] not in marked_keys]
 

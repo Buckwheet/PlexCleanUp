@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.config import PAGE_SIZE, GRACE_PERIOD_DAYS, MAX_DELETE_PER_REQUEST, MAX_MARK_PER_REQUEST, DAILY_DELETE_LIMIT, DRY_RUN
 from app.db import init_db, get_db, deletions_today
 from app import plex_client, radarr_client, sonarr_client
-from app.scheduler import start_scheduler, run_scan, get_cached_candidates
+from app.scheduler import start_scheduler, run_scan, get_cached_candidates, get_cached_library
 
 logging.basicConfig(level=logging.INFO)
 
@@ -55,6 +55,19 @@ def candidates(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=
         "page": page,
         "page_size": page_size,
         "items": all_c[start:end],
+    }
+
+
+@app.get("/api/library")
+def library(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=1, le=10000)):
+    all_l = get_cached_library()
+    start = (page - 1) * page_size
+    end = start + page_size
+    return {
+        "total": len(all_l),
+        "page": page,
+        "page_size": page_size,
+        "items": all_l[start:end],
     }
 
 
