@@ -231,18 +231,26 @@ def _find_collection(library_id: str, name: str) -> str | None:
     return None
 
 
+def _get_library_type(library_id: str) -> str:
+    """Get the Plex type number for a library: 1=movie, 2=show."""
+    root = _get("/library/sections")
+    for d in root.findall("Directory"):
+        if d.get("key") == library_id:
+            return "2" if d.get("type") == "show" else "1"
+    return "1"
+
+
 def _ensure_collection(library_id: str, name: str) -> str:
     """Get or create the collection, return its ratingKey."""
     key = _find_collection(library_id, name)
     if key:
         return key
-    # Create by adding a dummy then we'll manage items directly
-    # Plex creates collections via the machine ID endpoint
+    lib_type = _get_library_type(library_id)
     r = httpx.post(
         f"{PLEX_URL}/library/collections",
         headers=_headers(),
         params={
-            "type": "1",  # movie
+            "type": lib_type,
             "title": name,
             "sectionId": library_id,
             "smart": "0",
