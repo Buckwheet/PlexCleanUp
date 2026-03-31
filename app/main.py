@@ -50,25 +50,70 @@ def candidates(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=
     all_c = get_cached_candidates()
     start = (page - 1) * page_size
     end = start + page_size
-    return {
-        "total": len(all_c),
-        "page": page,
-        "page_size": page_size,
-        "items": all_c[start:end],
-    }
+    items = all_c[start:end]
+    slim = []
+    for i in items:
+        slim.append({
+            "ratingKey": i["ratingKey"],
+            "title": i["title"],
+            "media_type": i.get("media_type", "movie"),
+            "year": i.get("year", 0),
+            "addedAt": i.get("addedAt", 0),
+            "file_size": i.get("file_size", 0),
+            "play_count": i.get("play_count", 0),
+            "last_viewed_at": i.get("last_viewed_at", 0),
+            "user_plays": i.get("user_plays", {}),
+        })
+    return {"total": len(all_c), "page": page, "page_size": page_size, "items": slim}
 
 
 @app.get("/api/library")
-def library(page: int = Query(1, ge=1), page_size: int = Query(PAGE_SIZE, ge=1, le=10000)):
+def library(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    sort: str = Query("play_count"),
+    dir: str = Query("desc"),
+    search: str = Query(""),
+    media_type: str = Query(""),
+):
     all_l = get_cached_library()
+
+    # Filter
+    if search:
+        s = search.lower()
+        all_l = [i for i in all_l if s in i.get("title", "").lower()]
+    if media_type:
+        all_l = [i for i in all_l if i.get("media_type") == media_type]
+
+    # Sort
+    reverse = dir == "desc"
+    def sort_key(item):
+        v = item.get(sort, 0)
+        if sort == "title":
+            return (v or "").lower()
+        return v or 0
+    all_l = sorted(all_l, key=sort_key, reverse=reverse)
+
+    total = len(all_l)
     start = (page - 1) * page_size
-    end = start + page_size
-    return {
-        "total": len(all_l),
-        "page": page,
-        "page_size": page_size,
-        "items": all_l[start:end],
-    }
+    items = all_l[start:start + page_size]
+
+    # Slim payload
+    slim = []
+    for i in items:
+        slim.append({
+            "ratingKey": i["ratingKey"],
+            "title": i["title"],
+            "media_type": i.get("media_type", "movie"),
+            "year": i.get("year", 0),
+            "addedAt": i.get("addedAt", 0),
+            "file_size": i.get("file_size", 0),
+            "play_count": i.get("play_count", 0),
+            "last_viewed_at": i.get("last_viewed_at", 0),
+            "user_plays": i.get("user_plays", {}),
+        })
+
+    return {"total": total, "page": page, "page_size": page_size, "items": slim}
 
 
 @app.post("/api/mark")

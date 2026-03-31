@@ -208,6 +208,8 @@ let libraryData = null;
 let libSort = {col: 'play_count', dir: 'desc'};
 let libPage = 1;
 let libFilter = '';
+let libTypeFilter = '';
+let libSearchTimeout = null;
 
 function libSortIcon(col) {
   if (libSort.col !== col) return ' ↕';
@@ -217,43 +219,38 @@ function libSortIcon(col) {
 function toggleLibSort(col) {
   if (libSort.col === col) libSort.dir = libSort.dir === 'asc' ? 'desc' : 'asc';
   else { libSort.col = col; libSort.dir = col === 'title' ? 'asc' : 'desc'; }
-  renderLibrary();
+  libPage = 1;
+  loadLibrary();
+}
+
+function libSearchChanged(val) {
+  clearTimeout(libSearchTimeout);
+  libSearchTimeout = setTimeout(() => { libFilter = val; libPage = 1; loadLibrary(); }, 300);
 }
 
 async function loadLibrary() {
-  if (!libraryData) libraryData = await api('library?page=1&page_size=10000');
+  const params = `page=${libPage}&page_size=25&sort=${libSort.col}&dir=${libSort.dir}&search=${encodeURIComponent(libFilter)}&media_type=${libTypeFilter}`;
+  libraryData = await api('library?' + params);
   renderLibrary();
 }
 
 function renderLibrary() {
   const el = document.getElementById('libraryTab');
-  if (!libraryData || !libraryData.items.length) { el.innerHTML = '<div class="empty">No library data.</div>'; return; }
+  if (!libraryData) { el.innerHTML = '<div class="empty">Loading...</div>'; return; }
 
-  let items = libraryData.items;
-  if (libFilter) {
-    const f = libFilter.toLowerCase();
-    items = items.filter(m => m.title.toLowerCase().includes(f));
-  }
-
-  const sorted = [...items].sort((a,b) => {
-    const col = libSort.col;
-    const dir = libSort.dir === 'asc' ? 1 : -1;
-    let va = a[col], vb = b[col];
-    if (col === 'title') { va = (va||'').toLowerCase(); vb = (vb||'').toLowerCase(); }
-    if (col === 'days') { va = daysSince(a.addedAt); vb = daysSince(b.addedAt); }
-    if (col === 'last_viewed_at') { va = va||0; vb = vb||0; }
-    if (va < vb) return -1 * dir;
-    if (va > vb) return 1 * dir;
-    return 0;
-  });
-
-  const pageSize = 25;
-  const start = (libPage - 1) * pageSize;
-  const paged = sorted.slice(start, start + pageSize);
   const thStyle = 'cursor:pointer;user-select:none;';
+  let html = `<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+    <input type="text" placeholder="Search titles..." value="${libFilter}" oninput="libSearchChanged(this.value)" style="padding:6px 12px;border-radius:4px;border:1px solid #333;background:var(--surface);color:var(--text);width:250px;font-size:0.85rem;">
+    <select onchange="libTypeFilter=this.value;libPage=1;loadLibrary()" style="padding:6px;border-radius:4px;border:1px solid #333;background:var(--surface);color:var(--text);font-size:0.85rem;">
+      <option value="">All Types</option>
+      <option value="movie" ${libTypeFilter==='movie'?'selected':''}>Movies</option>
+      <option value="show" ${libTypeFilter==='show'?'selected':''}>TV Shows</option>
+    </select>
+    <span style="font-size:0.8rem;color:var(--muted)">${libraryData.total} items</span>
+  </div>`;
 
-  let html = `<div style="margin-bottom:12px"><input type="text" placeholder="Search titles..." value="${libFilter}" oninput="libFilter=this.value;libPage=1;renderLibrary()" style="padding:6px 12px;border-radius:4px;border:1px solid #333;background:var(--surface);color:var(--text);width:300px;font-size:0.85rem;"></div>`;
-  html += `<div style="margin-bottom:8px;font-size:0.8rem;color:var(--muted)">Showing ${sorted.length} items</div>`;
+  if (!libraryData.items.length) { el.innerHTML = html + '<div class="empty">No results.</div>'; return; }
+
   html += `<table><tr>
     <th style="${thStyle}" onclick="toggleLibSort('title')">Title${libSortIcon('title')}</th>
     <th style="${thStyle}" onclick="toggleLibSort('media_type')">Type${libSortIcon('media_type')}</th>
@@ -264,7 +261,7 @@ function renderLibrary() {
     <th style="${thStyle}" onclick="toggleLibSort('last_viewed_at')">Last Watched${libSortIcon('last_viewed_at')}</th>
     <th>Viewers</th>
     <th>Actions</th></tr>`;
-  for (const m of paged) {
+  for (const m of libraryData.items) {
     const viewers = m.user_plays ? Object.entries(m.user_plays).map(([u,c])=>`${u}(${c})`).join(', ') : '';
     const typeBadge = m.media_type === 'show' ? '<span class="badge badge-scheduled">TV</span>' : '<span class="badge badge-immediate">Film</span>';
     const lastWatched = m.last_viewed_at ? new Date(m.last_viewed_at*1000).toLocaleDateString() : '<span style="color:var(--muted)">Never</span>';
@@ -281,14 +278,14 @@ function renderLibrary() {
       </td></tr>`;
   }
   html += '</table>';
-  const pages = Math.ceil(sorted.length / pageSize);
+  const pages = Math.ceil(libraryData.total / 25);
   if (pages > 1) {
     html += '<div class="pagination">';
-    if (libPage > 1) html += `<button class="btn" onclick="libPage=1;renderLibrary()">«</button>`;
+    if (libPage > 1) html += `<button class="btn" onclick="libPage=1;loadLibrary()">«</button>`;
     const startP = Math.max(1, libPage - 3);
     const endP = Math.min(pages, libPage + 3);
-    for (let i=startP;i<=endP;i++) html += `<button class="btn ${i===libPage?'active':''}" onclick="libPage=${i};renderLibrary()">${i}</button>`;
-    if (libPage < pages) html += `<button class="btn" onclick="libPage=${pages};renderLibrary()">»</button>`;
+    for (let i=startP;i<=endP;i++) html += `<button class="btn ${i===libPage?'active':''}" onclick="libPage=${i};loadLibrary()">${i}</button>`;
+    if (libPage < pages) html += `<button class="btn" onclick="libPage=${pages};loadLibrary()">»</button>`;
     html += '</div>';
   }
   el.innerHTML = html;
