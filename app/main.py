@@ -120,8 +120,13 @@ def library(
 def mark(body: RatingKeys):
     if len(body.rating_keys) > MAX_MARK_PER_REQUEST:
         raise HTTPException(400, f"Cannot mark more than {MAX_MARK_PER_REQUEST} items at once")
+    # Look up in both candidates and full library
     candidates = get_cached_candidates()
+    library = get_cached_library()
     lookup = {c["ratingKey"]: c for c in candidates}
+    for item in library:
+        if item["ratingKey"] not in lookup:
+            lookup[item["ratingKey"]] = item
     db = get_db()
     added = []
     for rk in body.rating_keys:
