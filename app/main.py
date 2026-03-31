@@ -214,7 +214,7 @@ def delete_now(body: RatingKeys):
             # Get file path before deleting so we can do a partial Plex scan
             scan_path = None
             try:
-                scan_path = plex_client.get_movie_file_path(rk)
+                scan_path = plex_client.get_file_path(rk)
             except Exception:
                 pass
             if rid:

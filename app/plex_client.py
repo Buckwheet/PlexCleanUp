@@ -254,58 +254,96 @@ def _ensure_collection(library_id: str, name: str) -> str:
     return root.find("Directory").get("ratingKey")
 
 
-def add_to_collection(rating_keys: list[str]):
-    """Add movies to the 'Leaving Plex Soon' collection."""
-    lib_id = get_movie_library_id()
-    if not lib_id:
-        return
-    col_key = _ensure_collection(lib_id, "! Leaving Plex Soon")
-    machine_id = _get("/").get("machineIdentifier", "")
-    for rk in rating_keys:
-        httpx.put(
-            f"{PLEX_URL}/library/collections/{col_key}/items",
-            headers=_headers(),
-            params={"uri": f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"},
-            timeout=30,
-        )
-
-
-def get_movie_file_path(rating_key: str) -> str | None:
-    """Get the file path for a movie by its ratingKey."""
+def _get_item_library_id(rating_key: str) -> str | None:
+    """Get the library section ID for a given item."""
     root = _get(f"/library/metadata/{rating_key}")
+    for child in root:
+        lid = child.get("librarySectionID")
+        if lid:
+            return lid
+    return None
+
+
+def _all_library_ids() -> list[str]:
+    ids = []
+    mid = get_movie_library_id()
+    if mid:
+        ids.append(mid)
+    tid = get_tv_library_id()
+    if tid:
+        ids.append(tid)
+    return ids
+
+
+def add_to_collection(rating_keys: list[str]):
+    """Add items to '! Leaving Plex Soon' collection in their respective libraries."""
+    machine_id = _get("/").get("machineIdentifier", "")
+    by_lib: dict[str, list[str]] = {}
+    for rk in rating_keys:
+        lid = _get_item_library_id(rk)
+        if lid:
+            by_lib.setdefault(lid, []).append(rk)
+    for lib_id, keys in by_lib.items():
+        col_key = _ensure_collection(lib_id, "! Leaving Plex Soon")
+        for rk in keys:
+            httpx.put(
+                f"{PLEX_URL}/library/collections/{col_key}/items",
+                headers=_headers(),
+                params={"uri": f"server://{machine_id}/com.plexapp.plugins.library/library/metadata/{rk}"},
+                timeout=30,
+            )
+
+
+def get_file_path(rating_key: str) -> str | None:
+    """Get the file path for a movie or first episode of a show."""
+    root = _get(f"/library/metadata/{rating_key}")
+    # Movie: direct Video with Media/Part
     for v in root.findall("Video"):
         for media in v.findall("Media"):
             for part in media.findall("Part"):
                 f = part.get("file")
                 if f:
-                    # Return the parent directory of the file
                     return f.rsplit("/", 1)[0] if "/" in f else f.rsplit("\\", 1)[0]
+    # Show: get first episode path
+    for d in root.findall("Directory"):
+        if d.get("type") == "show":
+            try:
+                leaves = _get(f"/library/metadata/{rating_key}/allLeaves")
+                for v in leaves.findall("Video"):
+                    for media in v.findall("Media"):
+                        for part in media.findall("Part"):
+                            f = part.get("file")
+                            if f:
+                                # Go up two levels: episode file -> season dir -> show dir
+                                show_dir = f.rsplit("/", 2)[0] if f.count("/") >= 2 else f.rsplit("/", 1)[0]
+                                return show_dir
+            except Exception:
+                pass
     return None
 
 
 def scan_library(path: str = None):
     """Trigger a Plex library scan. If path is given, only scan that folder."""
-    lib_id = get_movie_library_id()
-    if not lib_id:
-        return
-    params = {}
-    if path:
-        params["path"] = path
-    httpx.get(f"{PLEX_URL}/library/sections/{lib_id}/refresh", headers=_headers(), params=params, timeout=30)
-    httpx.put(f"{PLEX_URL}/library/sections/{lib_id}/emptyTrash", headers=_headers(), timeout=30)
+    for lib_id in _all_library_ids():
+        params = {}
+        if path:
+            params["path"] = path
+        httpx.get(f"{PLEX_URL}/library/sections/{lib_id}/refresh", headers=_headers(), params=params, timeout=30)
+        httpx.put(f"{PLEX_URL}/library/sections/{lib_id}/emptyTrash", headers=_headers(), timeout=30)
 
 
 def remove_from_collection(rating_keys: list[str]):
-    """Remove movies from the 'Leaving Plex Soon' collection."""
-    lib_id = get_movie_library_id()
-    if not lib_id:
-        return
-    col_key = _find_collection(lib_id, "! Leaving Plex Soon")
-    if not col_key:
-        return
-    for rk in rating_keys:
-        httpx.delete(
-            f"{PLEX_URL}/library/collections/{col_key}/items/{rk}",
-            headers=_headers(),
-            timeout=30,
-        )
+    """Remove items from '! Leaving Plex Soon' collection in all libraries."""
+    for lib_id in _all_library_ids():
+        col_key = _find_collection(lib_id, "! Leaving Plex Soon")
+        if not col_key:
+            continue
+        for rk in rating_keys:
+            try:
+                httpx.delete(
+                    f"{PLEX_URL}/library/collections/{col_key}/items/{rk}",
+                    headers=_headers(),
+                    timeout=30,
+                )
+            except Exception:
+                pass
