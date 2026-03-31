@@ -98,16 +98,23 @@ def library(
     start = (page - 1) * page_size
     items = all_l[start:start + page_size]
 
-    # Slim payload
+    # Slim payload + lazy fetch show sizes for this page
     slim = []
     for i in items:
+        file_size = i.get("file_size", 0)
+        if not file_size and i.get("media_type") == "show":
+            try:
+                file_size = plex_client.get_show_size(i["ratingKey"])
+                i["file_size"] = file_size  # cache it in memory
+            except Exception:
+                pass
         slim.append({
             "ratingKey": i["ratingKey"],
             "title": i["title"],
             "media_type": i.get("media_type", "movie"),
             "year": i.get("year", 0),
             "addedAt": i.get("addedAt", 0),
-            "file_size": i.get("file_size", 0),
+            "file_size": file_size,
             "play_count": i.get("play_count", 0),
             "last_viewed_at": i.get("last_viewed_at", 0),
             "user_plays": i.get("user_plays", {}),
